@@ -3,8 +3,8 @@ const CORE_ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './icon-192.png',
-  './icon-512.png'
+  './launchericon-192x192.png',
+  './launchericon-512x512.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -30,7 +30,6 @@ self.addEventListener('fetch', (event) => {
       if (cached) return cached;
       return fetch(req)
         .then((res) => {
-          // Cache successful same-origin responses for offline reuse
           if (res && res.status === 200 && req.method === 'GET') {
             const resClone = res.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
