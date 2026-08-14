@@ -1,0 +1,1785 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>收納管家</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4F46E5">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="收納管家">
+    <link rel="icon" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
+    <!-- 1. 引入必要的庫 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+
+    <style>
+        body { user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+        input, textarea { user-select: text; -webkit-user-select: text; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+        input, select, textarea { font-size: 16px !important; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- Icon 渲染器 ---
+        const Icon = ({ name, size = 24, className, fill, ...props }) => {
+            const iconData = lucide.icons[name];
+            if (!iconData) return <span className={className}>?</span>;
+            return (
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width={size}
+                    height={size}
+                    viewBox="0 0 24 24"
+                    fill={fill || "none"}
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={className}
+                    {...props}
+                >
+                    {iconData.map((child, index) => {
+                        const [tagName, attrs] = child;
+                        return React.createElement(tagName, { ...attrs, key: index });
+                    })}
+                </svg>
+            );
+        };
+
+        // --- 常量定義 ---
+        const DEFAULT_CATEGORIES = {
+            clothes: { id: 'clothes', label: '衣物', iconName: 'Shirt' },
+            electronics: { id: 'electronics', label: '電子', iconName: 'Save' },
+            docs: { id: 'docs', label: '文件', iconName: 'FileText' },
+            books: { id: 'books', label: '書籍', iconName: 'Book' },
+            misc: { id: 'misc', label: '雜物', iconName: 'Package' },
+            tools: { id: 'tools', label: '工具', iconName: 'Hammer' },
+            stationery: { id: 'stationery', label: '文具', iconName: 'Pencil' },
+            food: { id: 'food', label: '食品', iconName: 'Coffee' },
+            makeup: { id: 'makeup', label: '美妝', iconName: 'Briefcase' },
+            snacks: { id: 'snacks', label: '零食', iconName: 'Cookie' },
+            cleaning: { id: 'cleaning', label: '清潔', iconName: 'SprayCan' },
+        };
+
+        const AVAILABLE_ICONS = [
+            { name: 'Tag', label: '標籤' }, { name: 'Heart', label: '愛心' },
+            { name: 'Music', label: '音樂' }, { name: 'Gift', label: '禮物' },
+            { name: 'Smile', label: '笑臉' }, { name: 'Sun', label: '戶外' },
+            { name: 'Umbrella', label: '雨具' }, { name: 'Key', label: '鑰匙' },
+            { name: 'Monitor', label: '電腦' }, { name: 'Scissors', label: '手工' },
+            { name: 'Package', label: '包裹' }, { name: 'Briefcase', label: '辦公' },
+            { name: 'Zap', label: '電器' }, { name: 'Utensils', label: '餐具' },
+            { name: 'Home', label: '家居' }, { name: 'Car', label: '汽車' },
+            { name: 'Gem', label: '貴重' }, { name: 'PawPrint', label: '寵物' },
+            { name: 'Palette', label: '繪畫' }, { name: 'Hammer', label: '工具' },
+            { name: 'Pencil', label: '文具' }, 
+            { name: 'Fish', label: '小丑魚' }, { name: 'Cookie', label: '零食' },
+            { name: 'Carrot', label: '蔬菜' }, { name: 'SprayCan', label: '清潔' },
+            { name: 'Dumbbell', label: '運動' }, { name: 'Sparkles', label: '美妝保養' },
+            { name: 'Smartphone', label: '手機' }, { name: 'Headphones', label: '耳機' },
+            { name: 'Cable', label: '3C配件' }, { name: 'Flower2', label: '園藝' },
+            { name: 'Wrench', label: '維修' }, { name: 'Baby', label: '嬰幼兒' },
+            { name: 'Bike', label: '單車' }, { name: 'Pill', label: '藥品' },
+            { name: 'Watch', label: '手錶' }, { name: 'Glasses', label: '眼鏡' },
+            { name: 'Trophy', label: '獎盃' }, { name: 'Puzzle', label: '玩具' },
+            { name: 'Guitar', label: '樂器' }, { name: 'Backpack', label: '背包' },
+            { name: 'Shirt', label: '衣物' }, { name: 'Save', label: '電子' },
+            { name: 'FileText', label: '文件' }, { name: 'Book', label: '書籍' },
+            { name: 'Coffee', label: '食品' },
+            { name: 'Lamp', label: '燈具' }, { name: 'Bed', label: '床具' },
+            { name: 'Sofa', label: '家具' }, { name: 'Bath', label: '衛浴' },
+            { name: 'Refrigerator', label: '冰箱' }, { name: 'Fan', label: '風扇' },
+            { name: 'Lightbulb', label: '燈泡' }, { name: 'Wifi', label: '網路' },
+            { name: 'Router', label: '路由器' }, { name: 'Camera', label: '相機' },
+            { name: 'Film', label: '影片' }, { name: 'Tv', label: '電視' },
+            { name: 'Speaker', label: '喇叭' }, { name: 'Mic', label: '麥克風' },
+            { name: 'Gamepad2', label: '遊戲' }, { name: 'Dice5', label: '桌遊' },
+            { name: 'Bookmark', label: '書籤' }, { name: 'Newspaper', label: '報章' },
+            { name: 'GraduationCap', label: '學用品' }, { name: 'Building2', label: '建築' },
+            { name: 'Warehouse', label: '倉儲' }, { name: 'TreePine', label: '戶外' },
+            { name: 'Leaf', label: '植物' }, { name: 'Sprout', label: '園藝' },
+            { name: 'Bug', label: '昆蟲' }, { name: 'Bird', label: '寵物' },
+            { name: 'Rabbit', label: '寵物' }, { name: 'Cat', label: '貓咪' },
+            { name: 'Dog', label: '狗狗' }, { name: 'Anchor', label: '船具' },
+            { name: 'Sailboat', label: '航海' }, { name: 'Tent', label: '露營' },
+            { name: 'Compass', label: '指南針' }, { name: 'Map', label: '地圖' },
+            { name: 'Waves', label: '水上活動' }, { name: 'Snowflake', label: '冬季' },
+            { name: 'CloudRain', label: '雨具' }, { name: 'Droplet', label: '液體' },
+            { name: 'Flame', label: '烹飪' }, { name: 'Candy', label: '糖果' },
+            { name: 'Pizza', label: '披薩' }, { name: 'Sandwich', label: '輕食' },
+            { name: 'Wine', label: '酒類' }, { name: 'Beer', label: '飲料' },
+            { name: 'CupSoda', label: '飲品' }, { name: 'Apple', label: '水果' },
+            { name: 'Banana', label: '水果' }, { name: 'Cherry', label: '水果' },
+            { name: 'Egg', label: '蛋類' }, { name: 'ChefHat', label: '廚房' },
+            { name: 'Soup', label: '料理' }, { name: 'Salad', label: '健康飲食' },
+            { name: 'Popcorn', label: '零食' }, { name: 'Syringe', label: '醫療' },
+            { name: 'Stethoscope', label: '醫療' }, { name: 'Bandage', label: '急救' },
+            { name: 'HeartPulse', label: '健康' }, { name: 'Target', label: '目標' },
+            { name: 'Medal', label: '獎牌' }, { name: 'Award', label: '獎項' },
+            { name: 'Flag', label: '旗幟' }, { name: 'Wallet', label: '錢包' },
+            { name: 'CreditCard', label: '信用卡' }, { name: 'Coins', label: '硬幣' },
+            { name: 'PiggyBank', label: '存錢筒' }, { name: 'Receipt', label: '收據' },
+            { name: 'ShoppingBasket', label: '購物籃' }, { name: 'ShoppingBag', label: '購物袋' },
+            { name: 'Store', label: '商店' }, { name: 'Boxes', label: '多箱' },
+            { name: 'Archive', label: '收納' }, { name: 'Folder', label: '資料夾' },
+            { name: 'Paperclip', label: '文書' }, { name: 'Ruler', label: '測量' },
+            { name: 'Calculator', label: '計算機' }, { name: 'Printer', label: '印表機' },
+            { name: 'Keyboard', label: '鍵盤' }, { name: 'Mouse', label: '滑鼠' },
+            { name: 'HardDrive', label: '硬碟' }, { name: 'Cpu', label: '電腦零件' },
+            { name: 'Usb', label: '傳輸線' }, { name: 'Disc', label: '光碟' },
+        ];
+
+        // --- 工具函數 ---
+        const compressImage = (file) => {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_SIZE = 800; 
+                        let width = img.width;
+                        let height = img.height;
+                        if (width > height) { if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } } 
+                        else { if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; } }
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.6));
+                    };
+                };
+            });
+        };
+
+        const getDaysRemaining = (expiryDate) => {
+            if (!expiryDate) return null;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const target = new Date(expiryDate);
+            const diffTime = target - today;
+            return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        };
+
+        // --- 組件 ---
+
+        const ImageUploader = ({ image, onImageChange, label = "照片", subLabel = "", compact = false }) => {
+            const fileInputRef = useRef(null);
+            const handleFileChange = async (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    const compressed = await compressImage(e.target.files[0]);
+                    onImageChange(compressed);
+                    e.target.value = '';
+                }
+            };
+            return (
+                <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`${compact ? 'w-36 h-36 rounded-xl' : 'w-full aspect-square rounded-2xl'} bg-gray-50 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors relative overflow-hidden group flex-shrink-0`}
+                >
+                    {image ? (
+                        <>
+                            <img src={image} alt="Preview" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Icon name="Camera" className="text-white" size={compact ? 16 : 24} />
+                                <span className="text-white text-[10px] mt-1 absolute bottom-2">更換</span>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex flex-col items-center text-gray-400">
+                            <Icon name="Camera" size={compact ? 20 : 24} className="mb-1 text-gray-300"/>
+                            {!compact && <span className="text-xs font-bold text-gray-500">{label}</span>}
+                            {subLabel && <span className="text-[10px] text-gray-400 mt-1">{subLabel}</span>}
+                        </div>
+                    )}
+                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+                </div>
+            );
+        };
+
+        const ItemRow = ({ item, containerName, categories, onClick, showTimeLabel = false, onToggleFavorite }) => {
+            const itemCats = item.categories || (item.category ? [item.category] : ['misc']);
+            
+            let expiryBadge = null;
+            let timeLabel = null;
+            
+            if (item.hasExpiry) {
+                const days = getDaysRemaining(item.expiryDate);
+                if (days < 0) expiryBadge = <span className="w-2 h-2 rounded-full bg-red-500" title="已過期"/>;
+                else if (days <= 30) expiryBadge = <span className="w-2 h-2 rounded-full bg-amber-500" title="快過期"/>;
+                
+                if (showTimeLabel) {
+                    let statusClass = "bg-emerald-50 text-emerald-700 border-emerald-100";
+                    let labelText = `${days} 天`;
+                    if (days < 0) { statusClass = "bg-red-50 text-red-700 border-red-100"; labelText = `已過期 ${Math.abs(days)} 天`; }
+                    else if (days <= 30) { statusClass = "bg-amber-50 text-amber-700 border-amber-100"; labelText = `${days} 天`; }
+                    timeLabel = <span className={`text-[10px] font-bold px-2 py-1 rounded-md border ${statusClass} flex-shrink-0 ml-2`}>{labelText}</span>;
+                }
+            }
+
+            return (
+                <div onClick={onClick} className={`p-3 rounded-2xl shadow-sm border flex gap-3 items-center active:scale-[0.98] transition-transform cursor-pointer ${item.isFavorite ? 'bg-amber-50/50 border-amber-100' : 'bg-white border-gray-100'}`}>
+                    <div className="w-14 h-14 rounded-xl flex-shrink-0 overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center relative">
+                        {item.image ? <img src={item.image} className="w-full h-full object-cover" /> : <Icon name={categories[itemCats[0]]?.iconName || 'Package'} size={24} className="text-gray-400 opacity-50" />}
+                        {expiryBadge && <div className="absolute top-1 right-1">{expiryBadge}</div>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start">
+                            <div className="font-bold text-gray-800 text-base truncate flex items-center gap-1">
+                                {item.name}
+                                {item.isFavorite && <Icon name="Star" size={12} fill="#fbbf24" className="text-amber-400"/>}
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1 items-center">
+                            {containerName && <span className="text-xs text-gray-500 flex items-center gap-1"><Icon name="Box" size={10}/> {containerName}</span>}
+                            {!containerName && itemCats.map(catId => {
+                                const c = categories[catId];
+                                return c ? <span key={catId} className="text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{c.label}</span> : null;
+                            })}
+                            {item.notes && <span className="text-gray-400 truncate max-w-[80px]">{item.notes}</span>}
+                        </div>
+                    </div>
+                    {timeLabel}
+                    {onToggleFavorite && (
+                        <button 
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onToggleFavorite(item.containerId, item.id); }}
+                            className="p-2 -mr-2 text-gray-300 hover:text-amber-400 transition-colors"
+                        >
+                            <Icon name="Star" size={20} fill={item.isFavorite ? "#fbbf24" : "none"} className={item.isFavorite ? "text-amber-400" : "text-gray-300"} />
+                        </button>
+                    )}
+                    {!showTimeLabel && !onToggleFavorite && <Icon name="ChevronRight" size={16} className="text-gray-300" />}
+                </div>
+            );
+        };
+
+        const SettingsModal = ({ onClose, onExport, onImport }) => {
+            const fileInputRef = useRef(null);
+            
+            const handleFileSelect = (e) => { 
+                if (e.target.files && e.target.files[0]) {
+                    onImport(e.target.files[0]);
+                    e.target.value = '';
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-xs shadow-2xl p-6 animate-in zoom-in duration-200">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2"><Icon name="Settings" size={20}/> 設定</h3>
+                            <button type="button" onClick={onClose} className="p-2 bg-gray-100 rounded-full"><Icon name="X" size={20} className="text-gray-500" /></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                                <h4 className="font-bold text-indigo-900 mb-2 text-sm">資料備份與還原</h4>
+                                <div className="space-y-2">
+                                    <button type="button" onClick={onExport} className="w-full bg-white border border-indigo-200 text-indigo-700 py-2.5 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-indigo-50"><Icon name="Download" size={16}/> 匯出備份</button>
+                                    <button type="button" onClick={() => fileInputRef.current.click()} className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-indigo-700"><Icon name="Upload" size={16}/> 匯入備份</button>
+                                    <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".json,application/json" className="hidden" />
+                                </div>
+                            </div>
+                            <div className="text-center text-xs text-gray-400 mt-4">收納管家 v6.7<br/>本地數據存儲</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ContainerFormModal = ({ onClose, onSave, initialData }) => {
+            const isEdit = !!initialData;
+            const [name, setName] = useState(initialData?.name || '');
+            const [location, setLocation] = useState(initialData?.location || '');
+            const [details, setDetails] = useState(initialData?.details || '');
+            const [image, setImage] = useState(initialData?.image || null);
+            const [locationImage, setLocationImage] = useState(initialData?.locationImage || null);
+
+            return (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+                <div className="bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md p-6 shadow-2xl flex flex-col max-h-[90vh]">
+                <div className="flex justify-between items-center mb-4 flex-shrink-0">
+                    <h3 className="text-xl font-bold text-gray-800">{isEdit ? '編輯容器' : '新增容器'}</h3>
+                    <button type="button" onClick={onClose} className="p-2 bg-gray-100 rounded-full"><Icon name="X" size={20} className="text-gray-500" /></button>
+                </div>
+                <div className="overflow-y-auto flex-1 space-y-5 pb-4 px-1 no-scrollbar">
+                    <div className="flex gap-3">
+                        <div className="flex-1 space-y-2">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block ml-1">容器外觀</label>
+                            <ImageUploader image={image} onImageChange={setImage} label="外觀照片" subLabel="櫃子/盒子" />
+                            <input value={name} onChange={e => setName(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例：透明整理箱、玄關鞋櫃" />
+                        </div>
+                        <div className="flex-1 space-y-2">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block ml-1">存放位置</label>
+                            <ImageUploader image={locationImage} onImageChange={setLocationImage} label="位置照片" subLabel="放在哪裡" />
+                            <input value={location} onChange={e => setLocation(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例：主臥衣櫃頂層" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1 flex items-center gap-1"><Icon name="EyeOff" size={10}/> 詳情</label>
+                        <textarea value={details} onChange={e => setDetails(e.target.value)} rows={3} className="w-full mt-1 bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 outline-none resize-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-colors placeholder-indigo-300" placeholder="例如：門鎖密碼、備用鑰匙存放位置" />
+                    </div>
+                </div>
+                <button type="button" disabled={!name || !location} onClick={() => onSave({ name, location, image, locationImage, details })} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold disabled:opacity-50 hover:bg-indigo-700 flex-shrink-0 shadow-lg shadow-indigo-200">{isEdit ? '保存修改' : '建立容器'}</button>
+                </div>
+            </div>
+            );
+        };
+
+        const ItemFormModal = ({ containers, categories, initialData, preSelectedContainerId, onClose, onSave, onDelete, onAddCategory }) => {
+            const isEdit = !!initialData;
+            const [targetContainerId, setTargetContainerId] = useState(initialData?.containerId || preSelectedContainerId || 'unsorted');
+            const [name, setName] = useState(initialData?.name || '');
+            const [selectedCategories, setSelectedCategories] = useState(initialData?.categories || (initialData?.category ? [initialData.category] : ['misc']));
+            const [notes, setNotes] = useState(initialData?.notes || '');
+            const [details, setDetails] = useState(initialData?.details || '');
+            const [image, setImage] = useState(initialData?.image || null);
+            const [hasExpiry, setHasExpiry] = useState(initialData?.hasExpiry || false);
+            const [purchaseDate, setPurchaseDate] = useState(initialData?.purchaseDate || '');
+            const [expiryDate, setExpiryDate] = useState(initialData?.expiryDate || '');
+            const [isFavorite, setIsFavorite] = useState(initialData?.isFavorite || false);
+            const [supplementaryImages, setSupplementaryImages] = useState(initialData?.supplementaryImages || []);
+            const [quantity, setQuantity] = useState(initialData?.quantity ?? 1);
+            const [price, setPrice] = useState(initialData?.price || '');
+            const [isConsumable, setIsConsumable] = useState(initialData?.isConsumable || false);
+            const [consumableDurationDays, setConsumableDurationDays] = useState(initialData?.consumableDurationDays || '');
+            const [newCatMode, setNewCatMode] = useState(false);
+            const [catExpanded, setCatExpanded] = useState(false);
+            const [showBarcodeScan, setShowBarcodeScan] = useState(false);
+            const [newCatName, setNewCatName] = useState('');
+            const [newCatIcon, setNewCatIcon] = useState('Tag');
+
+            const handleQuickAddCategory = () => {
+                if (newCatName) {
+                    const newId = onAddCategory(newCatName, newCatIcon);
+                    setSelectedCategories(prev => [...prev, newId]);
+                    setNewCatMode(false);
+                    setNewCatName('');
+                    setNewCatIcon('Tag');
+                }
+            };
+
+            const toggleCategory = (catId) => {
+                setSelectedCategories(prev => {
+                    if (prev.includes(catId)) {
+                        if (prev.length <= 1) return prev;
+                        return prev.filter(id => id !== catId);
+                    } else { return [...prev, catId]; }
+                });
+            };
+
+            const handleAddSupplementaryPhoto = async (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    alert("處理圖片中，請稍候...");
+                    const compressed = await compressImage(e.target.files[0]);
+                    setSupplementaryImages(prev => [...prev, compressed]);
+                    e.target.value = '';
+                }
+            };
+
+            const removeSupplementaryPhoto = (idx) => {
+                setSupplementaryImages(prev => prev.filter((_, i) => i !== idx));
+            };
+
+            return (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+                <div className="bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md p-6 shadow-2xl flex flex-col max-h-[95vh]">
+                <div className="flex justify-between items-center mb-4 flex-shrink-0">
+                    <h3 className="text-xl font-bold text-gray-800">{isEdit ? '編輯物品' : '放入物品'}</h3>
+                    <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setIsFavorite(v => !v)} className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${isFavorite ? 'bg-amber-50 border-amber-300 text-amber-600' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                            <Icon name="Star" size={16} fill={isFavorite ? "#92400e" : "none"}/>
+                        </button>
+                        <button type="button" onClick={onClose} className="p-2 bg-gray-100 rounded-full"><Icon name="X" size={20} className="text-gray-500" /></button>
+                    </div>
+                </div>
+                
+                <div className="overflow-y-auto flex-1 space-y-5 pb-4 px-1 no-scrollbar">
+                    <div className="flex gap-4 items-start">
+                        <ImageUploader image={image} onImageChange={setImage} label="主照片" compact={true} />
+                        <div className="flex-1 space-y-3">
+                            <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">名稱</label><input value={name} onChange={e => setName(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2 text-base outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例：護照、備用電池" /></div>
+                            <div>
+                                <div className="flex justify-between items-center ml-1 mb-1">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase">位置</label>
+                                    <button type="button" onClick={() => setShowBarcodeScan(true)} className="text-[10px] font-bold text-indigo-600 flex items-center gap-0.5"><Icon name="ScanLine" size={11}/> 掃碼選容器</button>
+                                </div>
+                                <select value={targetContainerId} onChange={e => setTargetContainerId(e.target.value)} className="w-full border border-gray-200 rounded-xl p-2 bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                                    <option value="unsorted">📦 未存放 (Unsorted)</option>
+                                    {containers.filter(c => c.id !== 'unsorted').map(c => <option key={c.id} value={c.id}>{c.name} - {c.location}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    {showBarcodeScan && (
+                        <BarcodeScanModal
+                            containers={containers}
+                            onClose={() => setShowBarcodeScan(false)}
+                            onDetect={(containerId) => { setTargetContainerId(containerId); setShowBarcodeScan(false); }}
+                        />
+                    )}
+
+                    <div>
+                        <div className="flex justify-between items-center mb-2 ml-1">
+                            <button type="button" onClick={() => setCatExpanded(v => !v)} className="flex items-center gap-1 text-[10px] font-bold text-gray-400 uppercase">
+                                分類 (可多選) <Icon name={catExpanded ? 'ChevronUp' : 'ChevronDown'} size={12}/>
+                            </button>
+                            <button type="button" onClick={() => setNewCatMode(!newCatMode)} className="text-indigo-600 text-xs flex items-center gap-1 font-bold"><Icon name="Plus" size={12}/> 新增分類</button>
+                        </div>
+
+                        {!catExpanded && (
+                            <div onClick={() => setCatExpanded(true)} className="flex flex-wrap gap-2 cursor-pointer">
+                                {selectedCategories.map(id => categories[id]).filter(Boolean).map(cat => (
+                                    <span key={cat.id} className="px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-600 text-white flex items-center gap-1"><Icon name={cat.iconName} size={12} /> {cat.label}</span>
+                                ))}
+                            </div>
+                        )}
+                        
+                        {catExpanded && newCatMode && (
+                            <div className="mb-3 p-3 bg-indigo-50 rounded-xl border border-indigo-100 space-y-2">
+                                <div className="flex justify-between"><span className="text-xs font-bold text-indigo-800">新分類</span><button type="button" onClick={() => setNewCatMode(false)}><Icon name="X" size={14} className="text-gray-400"/></button></div>
+                                <input value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="例：寵物用品" className="w-full border border-indigo-200 rounded-lg p-2 text-sm" />
+                                <div className="grid grid-cols-6 gap-2 max-h-40 overflow-y-auto no-scrollbar py-1">
+                                    {AVAILABLE_ICONS.map(icon => (
+                                        <button type="button" key={icon.name} onClick={() => setNewCatIcon(icon.name)} className={`aspect-square rounded-lg border flex items-center justify-center ${newCatIcon === icon.name ? 'bg-indigo-100 border-indigo-400 text-indigo-700' : 'bg-white border-gray-200 text-gray-500'}`} title={icon.label}><Icon name={icon.name} size={20} /></button>
+                                    ))}
+                                </div>
+                                <button type="button" onClick={handleQuickAddCategory} disabled={!newCatName} className="w-full py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">確認新增</button>
+                            </div>
+                        )}
+
+                        {catExpanded && (
+                            <div className="flex flex-wrap gap-2">
+                                {Object.values(categories).map((cat) => {
+                                    const isSelected = selectedCategories.includes(cat.id);
+                                    return (
+                                        <button 
+                                            type="button"
+                                            key={cat.id} 
+                                            onClick={() => toggleCategory(cat.id)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-medium border flex items-center gap-1 transition-colors ${isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                                        >
+                                            <Icon name={cat.iconName} size={12} /> {cat.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    <div><label className="text-[10px] font-bold text-gray-400 uppercase ml-1">備註 (可搜尋)</label><input value={notes} onChange={e => setNotes(e.target.value)} className="w-full mt-1 bg-gray-50 border border-gray-200 rounded-xl p-3 outline-none" placeholder="顏色、尺寸、特徵..." /></div>
+                    
+                    <div className="flex gap-2">
+                        <div className="flex-1 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs font-bold text-gray-700 flex items-center gap-1"><Icon name="Clock" size={13} /> 時效</label>
+                                <input type="checkbox" checked={hasExpiry} onChange={e => setHasExpiry(e.target.checked)} className="w-4 h-4 accent-indigo-600 rounded" />
+                            </div>
+                        </div>
+                        <div className="flex-1 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs font-bold text-gray-700 flex items-center gap-1"><Icon name="RefreshCw" size={13} /> 消耗</label>
+                                <input type="checkbox" checked={isConsumable} onChange={e => setIsConsumable(e.target.checked)} className="w-4 h-4 accent-indigo-600 rounded" />
+                            </div>
+                        </div>
+                        <div className="flex-1 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                            <div className="flex items-center justify-between gap-1">
+                                <label className="text-xs font-bold text-gray-700 flex items-center gap-1 flex-shrink-0"><Icon name="DollarSign" size={13}/> 金額</label>
+                                <input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={4} value={price} onChange={e => setPrice(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))} className="w-12 bg-white border border-gray-200 rounded-lg p-1 text-sm outline-none text-right" placeholder="0" />
+                            </div>
+                        </div>
+                    </div>
+
+                    {hasExpiry && (
+                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 grid grid-cols-2 gap-3">
+                            <div><span className="text-xs text-gray-400">購買日期</span><input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} className="w-full mt-1 p-2 border border-gray-200 rounded-lg text-sm bg-white" /></div>
+                            <div><span className="text-xs text-gray-400">到期日期</span><input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} className="w-full mt-1 p-2 border border-gray-200 rounded-lg text-sm bg-white" /></div>
+                        </div>
+                    )}
+
+                    {isConsumable && (
+                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs text-gray-400">數量</span>
+                                <div className="flex items-center gap-3">
+                                    <button type="button" onClick={() => setQuantity(q => Math.max(0, q - 1))} className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-600 active:bg-gray-100"><Icon name="Minus" size={14}/></button>
+                                    <span className="font-bold text-gray-800 w-6 text-center">{quantity}</span>
+                                    <button type="button" onClick={() => setQuantity(q => q + 1)} className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-600 active:bg-gray-100"><Icon name="Plus" size={14}/></button>
+                                </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs text-gray-400">大約可以用幾天</span>
+                                <input type="number" min="1" value={consumableDurationDays} onChange={e => setConsumableDurationDays(e.target.value)} className="w-20 p-2 border border-gray-200 rounded-lg text-sm bg-white text-center" placeholder="30" />
+                            </div>
+                        </div>
+                    )}
+
+                    <div>
+                        <div><label className="text-[10px] font-bold text-indigo-400 uppercase ml-1 flex items-center gap-1"><Icon name="EyeOff" size={10}/> 詳情</label><textarea value={details} onChange={e => setDetails(e.target.value)} rows={3} className="w-full mt-1 bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 outline-none resize-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-colors" placeholder="保固期限、其他備註" /></div>
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-100">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block ml-1">補充資料 (說明書/憑證) - 僅在此管理</label>
+                        <div className="grid grid-cols-4 gap-2">
+                            {supplementaryImages.map((img, idx) => (
+                                <div key={idx} className="aspect-square rounded-lg overflow-hidden relative border border-gray-200 group">
+                                    <img src={img} className="w-full h-full object-cover pointer-events-none"/>
+                                    <button 
+                                        type="button"
+                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeSupplementaryPhoto(idx); }} 
+                                        className="absolute top-0 right-0 bg-red-500 text-white rounded-bl-lg w-6 h-6 flex items-center justify-center z-10 shadow-sm active:bg-red-600"
+                                    >
+                                        <Icon name="X" size={14}/>
+                                    </button>
+                                </div>
+                            ))}
+                            <label className="aspect-square rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:bg-gray-50 cursor-pointer active:bg-gray-100 transition-colors">
+                                <Icon name="Plus" size={20} />
+                                <span className="text-[8px] mt-1">添加</span>
+                                <input type="file" accept="image/*" className="hidden" onChange={handleAddSupplementaryPhoto} />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex flex-col gap-3 flex-shrink-0">
+                    <button type="button" disabled={!name} onClick={() => onSave({ name, categories: selectedCategories, category: selectedCategories[0], notes, details, image, hasExpiry, purchaseDate, expiryDate, isFavorite, supplementaryImages, quantity, price, isConsumable, consumableDurationDays: consumableDurationDays ? Number(consumableDurationDays) : '', consumableStartDate: initialData?.consumableStartDate || new Date().toISOString().slice(0,10), needsRestock: initialData?.needsRestock || false }, targetContainerId)} className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200">{isEdit ? '保存所有修改' : '確認放入'}</button>
+                    {isEdit && (
+                        <button 
+                            type="button"
+                            onClick={(e) => { 
+                                e.preventDefault(); 
+                                e.stopPropagation(); 
+                                onDelete(initialData.containerId, initialData.id); 
+                            }} 
+                            className="w-full bg-red-50 text-red-600 py-3 rounded-xl font-bold hover:bg-red-100 border border-red-100"
+                        >
+                            刪除此物品
+                        </button>
+                    )}
+                </div>
+                </div>
+            </div>
+            );
+        };
+
+        const ItemDetailModal = ({ item, containerData, categories, onClose, onEdit, onUpdateItem }) => {
+            const itemCats = item.categories || (item.category ? [item.category] : ['misc']);
+            const daysLeft = item.hasExpiry ? getDaysRemaining(item.expiryDate) : null;
+            const consumableDaysLeft = (item.isConsumable && item.consumableDurationDays && item.consumableStartDate) ? (Number(item.consumableDurationDays) - Math.floor((new Date().setHours(0,0,0,0) - new Date(item.consumableStartDate).setHours(0,0,0,0)) / 86400000)) : null;
+            const [isFullscreen, setIsFullscreen] = useState(null); 
+            
+            if (isFullscreen) {
+                return (
+                    <div className="fixed inset-0 bg-black z-[60] flex items-center justify-center p-2" onClick={() => setIsFullscreen(null)}>
+                        <img src={isFullscreen} className="max-w-full max-h-full object-contain" />
+                        <button className="absolute top-4 right-4 text-white p-2 bg-black/50 rounded-full"><Icon name="X" size={24}/></button>
+                    </div>
+                )
+            }
+
+            return (
+                <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                        {/* 頂部圖片展示區 */}
+                        <div className="relative w-full h-64 bg-gray-100 flex overflow-hidden">
+                            <div className="w-full h-full flex-shrink-0 flex items-center justify-center relative border-r border-white/20" onClick={() => item.image && setIsFullscreen(item.image)}>
+                                {item.image ? <img src={item.image} className="w-full h-full object-contain bg-black/5" /> : <div className="flex flex-col items-center opacity-30"><Icon name={categories[itemCats[0]]?.iconName || 'Package'} size={64} className="text-gray-500" /></div>}
+                                <div className="absolute bottom-2 right-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded backdrop-blur-sm">物品</div>
+                            </div>
+                            {containerData?.locationImage && (
+                                <div className="w-1/3 h-24 absolute bottom-4 left-4 rounded-xl border-2 border-white shadow-lg overflow-hidden bg-gray-200 z-10" onClick={() => setIsFullscreen(containerData.locationImage)}>
+                                    <img src={containerData.locationImage} className="w-full h-full object-cover" />
+                                    <div className="absolute bottom-0 w-full bg-black/60 text-white text-[8px] text-center py-0.5">位置對照</div>
+                                </div>
+                            )}
+                            <button onClick={onClose} className="absolute top-3 right-3 p-2 bg-black/20 text-white rounded-full hover:bg-black/40 z-20"><Icon name="X" size={20} /></button>
+                            {item.isFavorite && <div className="absolute top-3 left-3 p-2 bg-black/20 text-amber-400 rounded-full backdrop-blur-sm z-20"><Icon name="Star" size={20} fill="#fbbf24" /></div>}
+                        </div>
+
+                        <div className="p-6 flex-1 overflow-y-auto no-scrollbar">
+                            <div className="mb-4">
+                                <h2 className="text-2xl font-bold text-gray-900 leading-tight">{item.name}</h2>
+                                <div className="flex flex-wrap gap-2 mt-2 text-sm text-gray-600">
+                                    {itemCats.map(catId => {
+                                        const cat = categories[catId];
+                                        if(!cat) return null;
+                                        return (
+                                            <span key={catId} className="bg-gray-100 px-2 py-1 rounded-md flex items-center gap-1">
+                                                <Icon name={cat.iconName} size={14} /> {cat.label}
+                                            </span>
+                                        );
+                                    })}
+                                    <span className="text-gray-400">|</span>
+                                    <span className="flex items-center gap-1 text-indigo-600 font-medium"><Icon name="Box" size={14} /> {containerData?.name === '未存放' ? '未存放' : (containerData?.name || '未知容器')}</span>
+                                </div>
+                            </div>
+                            
+                            {item.hasExpiry && (
+                                <div className={`mb-6 p-4 rounded-xl border ${daysLeft < 0 ? 'bg-red-50 border-red-100 text-red-700' : 'bg-emerald-50 border-emerald-100 text-emerald-700'}`}>
+                                    <div className="flex justify-between items-center"><h4 className="font-bold flex items-center gap-1"><Icon name="Clock" size={16}/> 時效狀態</h4><span className="font-bold">{daysLeft < 0 ? `已過期 ${Math.abs(daysLeft)} 天` : `剩餘 ${daysLeft} 天`}</span></div>
+                                </div>
+                            )}
+                            
+                            <div className="space-y-4">
+                                {item.price && <div><h4 className="text-xs font-bold text-gray-400 uppercase mb-1 flex items-center gap-1"><Icon name="DollarSign" size={10}/> 金額</h4><p className="text-gray-700 bg-gray-50 p-3 rounded-xl text-sm">${item.price}</p></div>}
+                                {item.notes && <div><h4 className="text-xs font-bold text-gray-400 uppercase mb-1">備註</h4><p className="text-gray-700 bg-gray-50 p-3 rounded-xl text-sm">{item.notes}</p></div>}
+                                {item.details && <div><h4 className="text-xs font-bold text-indigo-400 uppercase mb-1 flex items-center gap-1"><Icon name="EyeOff" size={10}/> 詳情</h4><p className="text-gray-700 bg-indigo-50/50 p-3 rounded-xl text-sm whitespace-pre-wrap">{item.details}</p></div>}
+                            </div>
+
+                            {item.isConsumable && (
+                                <div className="mt-4 p-4 rounded-xl border bg-sky-50 border-sky-100">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h4 className="font-bold text-sky-800 flex items-center gap-1 text-sm"><Icon name="RefreshCw" size={14}/> 消耗品</h4>
+                                        <div className="flex items-center gap-3">
+                                            <button onClick={() => onUpdateItem({ quantity: Math.max(0, (item.quantity ?? 1) - 1) })} className="w-7 h-7 rounded-lg bg-white border border-sky-200 flex items-center justify-center text-sky-700 active:bg-sky-100"><Icon name="Minus" size={12}/></button>
+                                            <span className="font-bold text-sky-900 w-5 text-center">{item.quantity ?? 1}</span>
+                                            <button onClick={() => onUpdateItem({ quantity: (item.quantity ?? 1) + 1 })} className="w-7 h-7 rounded-lg bg-white border border-sky-200 flex items-center justify-center text-sky-700 active:bg-sky-100"><Icon name="Plus" size={12}/></button>
+                                        </div>
+                                    </div>
+                                    {consumableDaysLeft !== null && <p className="text-xs text-sky-700 mb-3">{consumableDaysLeft < 0 ? '預估已用完' : `預估還可以用 ${consumableDaysLeft} 天`}</p>}
+                                    {item.needsRestock ? (
+                                        <div className="text-xs font-bold text-amber-700 bg-amber-100 px-3 py-2 rounded-lg flex items-center gap-1"><Icon name="ShoppingCart" size={12}/> 已加入採購清單</div>
+                                    ) : (
+                                        <button onClick={() => onUpdateItem({ needsRestock: true })} className="w-full bg-sky-600 text-white py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1"><Icon name="ShoppingCart" size={12}/> 標記需要補貨</button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* 補充照片區 (僅預覽) */}
+                            {(item.supplementaryImages && item.supplementaryImages.length > 0) && (
+                                <div className="mt-6 pt-6 border-t border-gray-100">
+                                    <h4 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-1"><Icon name="Image" size={12}/> 補充資料</h4>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {item.supplementaryImages.map((img, idx) => (
+                                            <div key={idx} className="aspect-square rounded-lg overflow-hidden relative border border-gray-200 cursor-pointer" onClick={() => setIsFullscreen(img)}>
+                                                <img src={img} className="w-full h-full object-cover"/>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-4 border-t border-gray-100 bg-gray-50">
+                            <button onClick={onEdit} className="w-full bg-white border border-gray-200 text-gray-800 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-100 shadow-sm"><Icon name="Edit3" size={18} /> 修改詳細資料</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const BarcodeLabel = ({ value, name }) => {
+            const svgRef = useRef(null);
+
+            useEffect(() => {
+                if (svgRef.current && window.JsBarcode && value) {
+                    try {
+                        window.JsBarcode(svgRef.current, value, {
+                            format: "CODE128",
+                            displayValue: false,
+                            width: 1.6,
+                            height: 46,
+                            margin: 8,
+                            background: "#ffffff",
+                            lineColor: "#111827",
+                        });
+                    } catch (e) { console.error('條碼生成失敗', e); }
+                }
+            }, [value]);
+
+            const handleDownload = () => {
+                const svg = svgRef.current;
+                if (!svg) return;
+                const svgData = new XMLSerializer().serializeToString(svg);
+                const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+                const url = URL.createObjectURL(svgBlob);
+                const img = new Image();
+                img.onload = () => {
+                    const scale = 4;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width * scale;
+                    canvas.height = img.height * scale;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.scale(scale, scale);
+                    ctx.drawImage(img, 0, 0);
+                    URL.revokeObjectURL(url);
+                    const pngUrl = canvas.toDataURL('image/png');
+                    const a = document.createElement('a');
+                    a.href = pngUrl;
+                    a.download = `${(name || '條碼').replace(/[^\w\u4e00-\u9fa5]/g, '')}.png`;
+                    a.click();
+                };
+                img.src = url;
+            };
+
+            return (
+                <div className="bg-white rounded-xl border border-gray-100 p-4 flex flex-col items-center gap-2 shadow-sm">
+                    <svg ref={svgRef}></svg>
+                    <button onClick={handleDownload} className="text-xs font-bold text-indigo-600 flex items-center gap-1"><Icon name="Download" size={12}/> 下載條碼圖片</button>
+                    <p className="text-[10px] text-gray-400 text-center leading-relaxed">下載後可匯入標籤機App列印（建議12×30mm尺寸），貼在容器上，之後可用「掃碼選容器」快速選取</p>
+                </div>
+            );
+        };
+
+        const BarcodeScanModal = ({ containers, onDetect, onClose }) => {
+            const videoRef = useRef(null);
+            const [error, setError] = useState(null);
+            const [scanning, setScanning] = useState(true);
+
+            useEffect(() => {
+                let stream = null;
+                let rafId = null;
+                let stopped = false;
+
+                if (!('BarcodeDetector' in window)) {
+                    setError('您的瀏覽器不支援掃碼功能，請手動從清單選擇');
+                    return;
+                }
+
+                const detector = new window.BarcodeDetector({ formats: ['code_128'] });
+
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                    .then((s) => {
+                        stream = s;
+                        if (videoRef.current) {
+                            videoRef.current.srcObject = s;
+                            videoRef.current.play();
+                        }
+                        const tick = async () => {
+                            if (stopped || !videoRef.current) return;
+                            try {
+                                const codes = await detector.detect(videoRef.current);
+                                if (codes.length > 0) {
+                                    const value = codes[0].rawValue;
+                                    const match = containers.find(c => c.shortCode === value);
+                                    if (match) {
+                                        stopped = true;
+                                        onDetect(match.id);
+                                        return;
+                                    }
+                                }
+                            } catch (e) { /* 偵測失敗時忽略，繼續下一輪 */ }
+                            rafId = requestAnimationFrame(tick);
+                        };
+                        rafId = requestAnimationFrame(tick);
+                    })
+                    .catch(() => setError('無法開啟相機，請確認已允許相機權限'));
+
+                return () => {
+                    stopped = true;
+                    if (rafId) cancelAnimationFrame(rafId);
+                    if (stream) stream.getTracks().forEach(t => t.stop());
+                };
+            }, []);
+
+            return (
+                <div className="fixed inset-0 bg-black z-[70] flex flex-col items-center justify-center">
+                    <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-white/20 rounded-full text-white z-10"><Icon name="X" size={20}/></button>
+                    {error ? (
+                        <div className="text-white text-center px-8">
+                            <Icon name="CameraOff" size={40} className="mx-auto mb-3 opacity-60"/>
+                            <p className="text-sm opacity-80">{error}</p>
+                        </div>
+                    ) : (
+                        <>
+                            <video ref={videoRef} className="w-full h-full object-cover" muted playsInline></video>
+                            <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 h-24 border-2 border-white/70 rounded-xl"></div>
+                            <p className="absolute bottom-10 text-white text-sm bg-black/40 px-4 py-2 rounded-full">將容器上的條碼對準框內</p>
+                        </>
+                    )}
+                </div>
+            );
+        };
+
+
+        const ContainerDetail = ({ selectedContainer, categories, setSelectedContainer, setShowEditContainer, handleDeleteContainer, setViewingItemData, toggleFavorite, setShowItemForm, setEditingItemData }) => {
+            if (!selectedContainer) return null;
+            const sortedItems = [...selectedContainer.items].sort((a, b) => (b.isFavorite === true) - (a.isFavorite === true));
+
+            return (
+            <div className="h-full flex flex-col bg-white min-h-screen">
+                <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-md px-4 py-3 flex items-center justify-between border-b border-gray-100">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                        <button onClick={() => setSelectedContainer(null)} className="p-2 -ml-2 text-gray-700 hover:bg-gray-100 rounded-full"><Icon name="ChevronRight" className="rotate-180" size={24} /></button>
+                        <span className="font-bold text-gray-800 truncate">{selectedContainer.name}</span>
+                    </div>
+                    {/* 未存放容器不顯示編輯/刪除按鈕 */}
+                    {selectedContainer.id !== 'unsorted' && (
+                        <div className="flex items-center">
+                            <button onClick={() => setShowEditContainer(true)} className="p-2 text-gray-400 hover:text-indigo-600 rounded-full hover:bg-indigo-50"><Icon name="Edit3" size={20} /></button>
+                            <button onClick={() => handleDeleteContainer(selectedContainer.id)} className="p-2 -mr-2 text-gray-400 hover:text-red-500 rounded-full hover:bg-red-50"><Icon name="Trash2" size={20} /></button>
+                        </div>
+                    )}
+                </div>
+                <div className="flex-1 px-4 py-6 overflow-y-auto pb-32 no-scrollbar">
+                    {selectedContainer.id !== 'unsorted' && (
+                        <>
+                            <div className="grid grid-cols-2 gap-3 mb-6">
+                                <div className="aspect-square rounded-2xl bg-gray-100 overflow-hidden relative shadow-sm border border-gray-100">
+                                    {selectedContainer.image ? <img src={selectedContainer.image} className="w-full h-full object-cover"/> : <div className="w-full h-full flex flex-col items-center justify-center text-gray-400"><Icon name="Box" size={32}/><span className="text-xs mt-1">無外觀圖</span></div>}
+                                    <div className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded">外觀</div>
+                                </div>
+                                <div className="aspect-square rounded-2xl bg-gray-100 overflow-hidden relative shadow-sm border border-gray-100">
+                                    {selectedContainer.locationImage ? <img src={selectedContainer.locationImage} className="w-full h-full object-cover"/> : <div className="w-full h-full flex flex-col items-center justify-center text-gray-400"><Icon name="Map" size={32}/><span className="text-xs mt-1">無位置圖</span></div>}
+                                    <div className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded">位置</div>
+                                </div>
+                            </div>
+                            <div className="mb-6">
+                                <h1 className="text-xl font-bold text-gray-900 leading-tight mb-2">{selectedContainer.name}</h1>
+                                <div className="flex items-center gap-1 text-gray-500 font-medium text-sm bg-gray-100 inline-flex px-2 py-1 rounded-lg"><Icon name="MapPin" size={14} /> {selectedContainer.location}</div>
+                            </div>
+                            {selectedContainer.details && (
+                                <div className="mb-6">
+                                    <h4 className="text-xs font-bold text-indigo-400 uppercase mb-2 flex items-center gap-1"><Icon name="EyeOff" size={10}/> 詳情</h4>
+                                    <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 text-sm text-gray-700 whitespace-pre-wrap">{selectedContainer.details}</div>
+                                </div>
+                            )}
+                        </>
+                    )}
+                    <div className="space-y-3 mt-6">
+                        <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">物品清單</h4>
+                        {sortedItems.map((item) => (
+                            <ItemRow key={item.id} item={item} containerName={null} categories={categories} onClick={() => setViewingItemData({...item, containerId: selectedContainer.id})} showTimeLabel={item.hasExpiry} onToggleFavorite={toggleFavorite} />
+                        ))}
+                        {selectedContainer.items.length === 0 && <div className="text-center py-10 text-gray-400 text-sm">此容器是空的</div>}
+                    </div>
+                    {selectedContainer.id !== 'unsorted' && (
+                        <div className="mt-6">
+                            <h4 className="text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-1"><Icon name="ScanLine" size={10}/> 容器條碼</h4>
+                            <BarcodeLabel value={selectedContainer.shortCode} name={selectedContainer.name} />
+                        </div>
+                    )}
+                </div>
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-white via-white to-transparent md:max-w-md md:mx-auto">
+                    <button onClick={() => { setEditingItemData(null); setShowItemForm(true); }} className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform"><Icon name="Plus" size={20} /> 放入物品</button>
+                </div>
+            </div>
+            );
+        };
+
+        const ItemPickerModal = ({ containers, categories, onSelect, onClose }) => {
+            const [term, setTerm] = useState('');
+            const allItems = [];
+            containers.forEach(c => c.items.forEach(i => {
+                allItems.push({ ...i, containerId: c.id, containerName: c.id === 'unsorted' ? '未存放' : c.name });
+            }));
+            const filtered = term.trim() ? allItems.filter(i => i.name.toLowerCase().includes(term.toLowerCase())) : allItems;
+
+            return (
+                <div className="fixed inset-0 bg-black/60 z-[60] flex items-end md:items-center justify-center p-0 md:p-4">
+                    <div className="bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[85vh]">
+                        <div className="flex justify-between items-center p-4 border-b border-gray-100 flex-shrink-0">
+                            <h3 className="text-lg font-bold text-gray-800">選擇物品</h3>
+                            <button onClick={onClose} className="p-2 bg-gray-100 rounded-full"><Icon name="X" size={18} className="text-gray-500" /></button>
+                        </div>
+                        <div className="p-4 pb-2 flex-shrink-0">
+                            <input value={term} onChange={e => setTerm(e.target.value)} autoFocus placeholder="搜尋物品名稱" className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                        <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-4 space-y-2">
+                            {filtered.map(item => (
+                                <div key={item.id} onClick={() => onSelect(item)} className="p-3 bg-gray-50 rounded-xl flex items-center gap-3 cursor-pointer active:bg-gray-100">
+                                    <div className="w-10 h-10 rounded-lg bg-white border border-gray-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                                        {item.image ? <img src={item.image} className="w-full h-full object-cover"/> : <Icon name={categories[(item.categories||[item.category])[0]]?.iconName || 'Package'} size={16} className="text-gray-400"/>}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-sm text-gray-800 truncate">{item.name}</div>
+                                        <div className="text-[10px] text-gray-400 flex items-center gap-1"><Icon name="Box" size={10}/> {item.containerName}</div>
+                                    </div>
+                                </div>
+                            ))}
+                            {filtered.length === 0 && <div className="text-center text-gray-400 text-sm py-10">找不到符合的物品</div>}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [containers, setContainers] = useState(() => { try { return JSON.parse(localStorage.getItem('storage_app_promax_data') || '[]'); } catch (e) { return []; } });
+            const [categories, setCategories] = useState(() => { try { return JSON.parse(localStorage.getItem('storage_app_promax_cats') || JSON.stringify(DEFAULT_CATEGORIES)); } catch (e) { return DEFAULT_CATEGORIES; } });
+            const [shoppingExtra, setShoppingExtra] = useState(() => { try { return JSON.parse(localStorage.getItem('storage_app_promax_shopping') || '[]'); } catch (e) { return []; } });
+            const [packingLists, setPackingLists] = useState(() => { try { return JSON.parse(localStorage.getItem('storage_app_promax_packing') || '[]'); } catch (e) { return []; } });
+            const [activeTab, setActiveTab] = useState('browse');
+            const [selectedContainer, setSelectedContainer] = useState(null);
+            const [activeCategory, setActiveCategory] = useState(null);
+            const [browseMode, setBrowseMode] = useState('container');
+            const [reminderSubView, setReminderSubView] = useState('time');
+            const [listsSubView, setListsSubView] = useState('favorites');
+            const [showShoppingNewForm, setShowShoppingNewForm] = useState(false);
+            const [showPackingCustomInput, setShowPackingCustomInput] = useState(false);
+            const [showPackingNewListForm, setShowPackingNewListForm] = useState(false);
+            const [nextContainerCode, setNextContainerCode] = useState(() => { try { return Number(localStorage.getItem('storage_app_promax_code_counter') || '1'); } catch (e) { return 1; } });
+            const [activePackingListId, setActivePackingListId] = useState(null);
+            const [showItemPicker, setShowItemPicker] = useState(false);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [showExpiredView, setShowExpiredView] = useState(false);
+            const [isLoaded, setIsLoaded] = useState(false);
+            
+            const [showAddContainer, setShowAddContainer] = useState(false);
+            const [showEditContainer, setShowEditContainer] = useState(false);
+            const [showItemForm, setShowItemForm] = useState(false);
+            const [showSettings, setShowSettings] = useState(false);
+            const [editingItemData, setEditingItemData] = useState(null);
+            const [viewingItemData, setViewingItemData] = useState(null);
+            const [undoToast, setUndoToast] = useState(null);
+            const [infoToast, setInfoToast] = useState(null);
+            const showInfoToast = (msg) => {
+                setInfoToast(msg);
+                setTimeout(() => setInfoToast(null), 2500);
+            };
+
+            useEffect(() => {
+                try {
+                    const storedContainers = JSON.parse(localStorage.getItem('storage_app_promax_data') || '[]');
+                    const storedCategories = JSON.parse(localStorage.getItem('storage_app_promax_cats') || JSON.stringify(DEFAULT_CATEGORIES));
+                    const storedShopping = JSON.parse(localStorage.getItem('storage_app_promax_shopping') || '[]');
+                    const storedPacking = JSON.parse(localStorage.getItem('storage_app_promax_packing') || '[]');
+
+                    // 補齊舊容器缺少的短編號（條碼用）
+                    let codeCounter = Number(localStorage.getItem('storage_app_promax_code_counter') || '1');
+                    const backfilledContainers = storedContainers.map(c => {
+                        if (c.id === 'unsorted' || c.shortCode) return c;
+                        const code = String(codeCounter).padStart(6, '0');
+                        codeCounter++;
+                        return { ...c, shortCode: code };
+                    });
+                    if (codeCounter !== Number(localStorage.getItem('storage_app_promax_code_counter') || '1')) {
+                        localStorage.setItem('storage_app_promax_code_counter', String(codeCounter));
+                        setNextContainerCode(codeCounter);
+                    }
+
+                    setContainers(backfilledContainers);
+                    setCategories(storedCategories);
+                    setShoppingExtra(storedShopping);
+                    setPackingLists(storedPacking);
+                } catch (e) {
+                    console.error("Failed to load data", e);
+                } finally {
+                    setIsLoaded(true);
+                }
+            }, []);
+
+            // Debounced save to avoid freezing UI
+            useEffect(() => { 
+                if (!isLoaded) return;
+                const timer = setTimeout(() => {
+                    try {
+                        localStorage.setItem('storage_app_promax_data', JSON.stringify(containers)); 
+                    } catch (e) {
+                        if (e.name === 'QuotaExceededError') alert("⚠️ 警告：儲存空間已滿！圖片過多可能導致資料丟失。請刪除部分圖片或進行備份。");
+                    }
+                }, 500); // 500ms delay
+                return () => clearTimeout(timer);
+            }, [containers, isLoaded]);
+            
+            useEffect(() => { 
+                if (!isLoaded) return;
+                localStorage.setItem('storage_app_promax_cats', JSON.stringify(categories)); 
+            }, [categories, isLoaded]);
+
+            useEffect(() => {
+                if (!isLoaded) return;
+                localStorage.setItem('storage_app_promax_shopping', JSON.stringify(shoppingExtra));
+            }, [shoppingExtra, isLoaded]);
+
+            useEffect(() => {
+                if (!isLoaded) return;
+                localStorage.setItem('storage_app_promax_packing', JSON.stringify(packingLists));
+            }, [packingLists, isLoaded]);
+
+            const handleExport = () => {
+                const data = { containers, categories, exportDate: new Date().toISOString(), version: "6.7" };
+                const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = `收納管家備份_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+            };
+
+            const handleImport = (file) => {
+                alert("正在讀取備份檔案，請稍候...");
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        if (data.containers && data.categories) { 
+                            if(confirm("即將覆蓋當前所有資料，確定嗎？")) {
+                                setContainers(data.containers); setCategories(data.categories); alert("資料還原成功！"); setShowSettings(false); 
+                            }
+                        } else { alert("無效的備份檔案格式。"); }
+                    } catch (err) { alert("讀取檔案失敗。"); }
+                };
+                reader.readAsText(file);
+            };
+
+            // 復原提示計時器
+            const undoTimerRef = useRef(null);
+            const showUndoToast = (label, restoreFn) => {
+                if (undoTimerRef.current) clearTimeout(undoTimerRef.current.timer);
+                const timer = setTimeout(() => setUndoToast(null), 5000);
+                undoTimerRef.current = { timer };
+                setUndoToast({ label, restoreFn });
+            };
+            const handleUndo = () => {
+                if (undoTimerRef.current) clearTimeout(undoTimerRef.current.timer);
+                if (undoToast) undoToast.restoreFn();
+                setUndoToast(null);
+            };
+
+            // 全局強力刪除
+            const handleDeleteItem = (containerId, itemId) => {
+                // 增加防呆：如果沒有 itemId，嘗試從 editingItemData 獲取
+                const targetId = itemId || editingItemData?.id;
+                
+                if (!targetId) {
+                    alert("錯誤：找不到物品ID，無法刪除");
+                    return;
+                }
+
+                let removedItem = null, removedFromId = null;
+                containers.forEach(c => { const found = c.items.find(i => i.id === targetId); if (found) { removedItem = found; removedFromId = c.id; } });
+
+                // 直接刪除，不需要確認，可在稍後復原
+                const updated = containers.map(c => ({
+                    ...c,
+                    items: c.items.filter(i => i.id !== targetId)
+                }));
+                
+                setContainers(updated);
+                
+                // 更新當前選中的容器視圖 (如果有的話)
+                if (selectedContainer) {
+                     const updatedSelected = updated.find(c => c.id === selectedContainer.id);
+                     setSelectedContainer(updatedSelected);
+                }
+                
+                // 關閉所有相關彈窗
+                setViewingItemData(null);
+                setEditingItemData(null);
+                setShowItemForm(false);
+
+                if (removedItem && removedFromId) {
+                    showUndoToast(`已刪除「${removedItem.name}」`, () => {
+                        setContainers(prev => prev.map(c => c.id === removedFromId ? { ...c, items: [...c.items, removedItem] } : c));
+                    });
+                }
+            };
+
+            const handleSaveContainer = (data) => {
+                if (showEditContainer && selectedContainer) {
+                    setContainers(prev => prev.map(c => c.id === selectedContainer.id ? { ...c, ...data } : c));
+                    setSelectedContainer(prev => ({ ...prev, ...data }));
+                    setShowEditContainer(false);
+                } else {
+                    const code = String(nextContainerCode).padStart(6, '0');
+                    const newContainer = { id: Date.now().toString(), shortCode: code, items: [], ...data };
+                    setContainers(prev => [...prev, newContainer]);
+                    setNextContainerCode(prev => {
+                        const next = prev + 1;
+                        try { localStorage.setItem('storage_app_promax_code_counter', String(next)); } catch (e) {}
+                        return next;
+                    });
+                    setShowAddContainer(false);
+                }
+            };
+
+            const handleSaveItem = (itemData, targetContainerId) => {
+                if (editingItemData) {
+                    const originalContainerId = editingItemData.containerId;
+                    const itemId = editingItemData.id;
+                    let newContainers = [...containers];
+                    if (originalContainerId !== targetContainerId) {
+                        newContainers = newContainers.map(c => c.id === originalContainerId ? { ...c, items: c.items.filter(i => i.id !== itemId) } : c);
+                        if (targetContainerId === 'unsorted' && !newContainers.find(c => c.id === 'unsorted')) {
+                            newContainers.push({ id: 'unsorted', name: '未存放', location: '待整理', items: [] });
+                        }
+                        newContainers = newContainers.map(c => c.id === targetContainerId ? { ...c, items: [...c.items, { ...itemData, id: itemId }] } : c);
+                    } else {
+                        newContainers = newContainers.map(c => c.id === originalContainerId ? { ...c, items: c.items.map(i => i.id === itemId ? { ...itemData, id: itemId } : i) } : c);
+                    }
+                    setContainers(newContainers);
+                    if (selectedContainer) {
+                        if (selectedContainer.id === originalContainerId || selectedContainer.id === targetContainerId) {
+                            setSelectedContainer(newContainers.find(c => c.id === selectedContainer.id));
+                        }
+                    }
+                    if (viewingItemData && viewingItemData.id === itemId) {
+                        setViewingItemData({ ...itemData, id: itemId, containerId: targetContainerId });
+                    }
+                } else {
+                    const newItem = { ...itemData, id: Date.now().toString(), isFavorite: itemData.isFavorite || false, supplementaryImages: itemData.supplementaryImages || [] };
+                    let newContainers = [...containers];
+                    if (targetContainerId === 'unsorted' && !newContainers.find(c => c.id === 'unsorted')) {
+                        newContainers.push({ id: 'unsorted', name: '未存放', location: '待整理', items: [] });
+                    }
+                    newContainers = newContainers.map(c => c.id === targetContainerId ? { ...c, items: [...c.items, newItem] } : c);
+                    setContainers(newContainers);
+
+                    if (selectedContainer && selectedContainer.id === targetContainerId) {
+                        setSelectedContainer(prev => ({ ...prev, items: [...prev.items, newItem] }));
+                    }
+                }
+                setShowItemForm(false);
+                setEditingItemData(null);
+            };
+
+            const updateItemFields = (containerId, itemId, patch) => {
+                setContainers(prev => prev.map(c => {
+                    if (c.id === containerId) {
+                        return { ...c, items: c.items.map(i => i.id === itemId ? { ...i, ...patch } : i) };
+                    }
+                    return c;
+                }));
+                if (selectedContainer && selectedContainer.id === containerId) {
+                    setSelectedContainer(prev => ({ ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, ...patch } : i) }));
+                }
+                if (viewingItemData && viewingItemData.id === itemId) {
+                    setViewingItemData(prev => ({ ...prev, ...patch }));
+                }
+            };
+
+            const addShoppingExtra = (entry) => {
+                if (!entry || !entry.name || !entry.name.trim()) return;
+                setShoppingExtra(prev => [...prev, { id: Date.now().toString(), name: entry.name.trim(), price: entry.price || '', image: entry.image || null, source: entry.source || '手動新增' }]);
+            };
+
+            const removeShoppingExtra = (id) => {
+                setShoppingExtra(prev => prev.filter(e => e.id !== id));
+            };
+
+            const markShoppingExtraPurchased = (entry) => {
+                setShoppingExtra(prev => prev.filter(e => e.id !== entry.id));
+                const newItem = { id: Date.now().toString(), name: entry.name, categories: ['misc'], category: 'misc', notes: '', details: '', image: entry.image || null, price: entry.price || '', hasExpiry: false, purchaseDate: '', expiryDate: '', isFavorite: false, supplementaryImages: [], quantity: 1, isConsumable: false };
+                setContainers(prev => {
+                    if (!prev.find(c => c.id === 'unsorted')) {
+                        prev = [...prev, { id: 'unsorted', name: '未存放', location: '待整理', items: [] }];
+                    }
+                    return prev.map(c => c.id === 'unsorted' ? { ...c, items: [...c.items, newItem] } : c);
+                });
+            };
+
+            const markRestockPurchased = (containerId, itemId) => {
+                updateItemFields(containerId, itemId, { needsRestock: false, consumableStartDate: new Date().toISOString().slice(0,10) });
+            };
+
+            const createPackingList = (name) => {
+                if (!name || !name.trim()) return;
+                const id = Date.now().toString();
+                setPackingLists(prev => [...prev, { id, name: name.trim(), items: [] }]);
+                return id;
+            };
+
+            const deletePackingList = (id) => {
+                setPackingLists(prev => prev.filter(l => l.id !== id));
+                if (activePackingListId === id) setActivePackingListId(null);
+            };
+
+            const addItemToPackingList = (listId, entry) => {
+                setPackingLists(prev => prev.map(l => l.id === listId ? { ...l, items: [...l.items, entry] } : l));
+            };
+
+            const removeItemFromPackingList = (listId, itemId) => {
+                setPackingLists(prev => prev.map(l => l.id === listId ? { ...l, items: l.items.filter(i => i.id !== itemId) } : l));
+            };
+
+            const toggleFavorite = (containerId, itemId) => {
+                setContainers(prev => prev.map(c => {
+                    if (c.id === containerId) {
+                        return { ...c, items: c.items.map(i => i.id === itemId ? { ...i, isFavorite: !i.isFavorite } : i) };
+                    }
+                    return c;
+                }));
+                if (selectedContainer && selectedContainer.id === containerId) {
+                     setSelectedContainer(prev => ({ ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, isFavorite: !i.isFavorite } : i) }));
+                }
+                if (viewingItemData && viewingItemData.id === itemId) {
+                    setViewingItemData(prev => ({ ...prev, isFavorite: !prev.isFavorite }));
+                }
+            };
+
+            const handleAddCategory = (name, iconName) => {
+                const id = 'cat_' + Date.now();
+                setCategories(prev => ({ ...prev, [id]: { id, label: name, iconName: iconName || 'Tag' } }));
+                return id;
+            };
+
+            const handleUpdateCategory = (id, patch) => {
+                setCategories(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+            };
+
+            const handleDeleteCategory = (id) => {
+                const cat = categories[id];
+                if (!cat) return;
+                const remainingIds = Object.keys(categories).filter(cid => cid !== id);
+                const fallbackId = remainingIds.includes('misc') ? 'misc' : (remainingIds[0] || null);
+                if (!confirm(`刪除「${cat.label}」這個分類嗎？裡面的物品會改成「${fallbackId ? categories[fallbackId].label : '未分類'}」。`)) return;
+                setContainers(prev => prev.map(c => ({
+                    ...c,
+                    items: c.items.map(i => {
+                        const cats = (i.categories || [i.category]).filter(cid => cid !== id);
+                        const nextCats = cats.length > 0 ? cats : (fallbackId ? [fallbackId] : []);
+                        return { ...i, categories: nextCats, category: nextCats[0] || fallbackId };
+                    })
+                })));
+                setCategories(prev => {
+                    const next = { ...prev };
+                    delete next[id];
+                    return next;
+                });
+                if (activeCategory === id) setActiveCategory(null);
+            };
+
+            const handleDeleteContainer = (id) => {
+                const removedContainer = containers.find(c => c.id === id);
+                const removedIndex = containers.findIndex(c => c.id === id);
+                setContainers(prev => prev.filter(c => c.id !== id));
+                setSelectedContainer(null);
+                if (removedContainer) {
+                    showUndoToast(`已刪除「${removedContainer.name}」（含${removedContainer.items.length}件物品）`, () => {
+                        setContainers(prev => {
+                            const next = [...prev];
+                            next.splice(Math.min(removedIndex, next.length), 0, removedContainer);
+                            return next;
+                        });
+                    });
+                }
+            };
+
+            const searchResults = useMemo(() => {
+                if (!searchTerm.trim()) return [];
+                const term = searchTerm.toLowerCase().trim();
+                const results = [];
+                containers.forEach(container => {
+                    container.items.forEach(item => {
+                        const catLabel = categories[item.category]?.label || '';
+                        if (item.name.toLowerCase().includes(term) || item.notes?.toLowerCase().includes(term) || catLabel.includes(term)) {
+                            results.push({ type: 'item', data: { ...item, containerId: container.id, containerName: container.id === 'unsorted' ? '未存放' : container.name } });
+                        }
+                    });
+                    if (container.id !== 'unsorted' && (container.name.toLowerCase().includes(term) || container.location.toLowerCase().includes(term))) {
+                        results.push({ type: 'container', data: container });
+                    }
+                });
+                return results;
+            }, [searchTerm, containers, categories]);
+
+            // Views
+
+            const HomeView = () => {
+                const catStats = useMemo(() => {
+                    const stats = {};
+                    containers.forEach(c => c.items.forEach(i => { if (!stats[i.category]) stats[i.category] = { count: 0, items: [] }; stats[i.category].count++; stats[i.category].items.push({ ...i, containerName: c.id === 'unsorted' ? '未存放' : c.name, containerId: c.id }); }));
+                    return stats;
+                }, [containers]);
+                const unsortedItems = containers.find(c => c.id === 'unsorted')?.items || [];
+                const [draggedCatId, setDraggedCatId] = useState(null);
+                const [editingCatId, setEditingCatId] = useState(null);
+                const [catEditMode, setCatEditMode] = useState(false);
+                const [editCatName, setEditCatName] = useState('');
+                const [editCatIcon, setEditCatIcon] = useState('');
+
+                return (
+                <div className="space-y-4 px-4 pt-6 pb-24">
+                    <div className="flex justify-between items-end px-1 mb-2">
+                        <div className="flex items-center gap-3">
+                            <button onClick={() => { setEditingItemData(null); setShowItemForm(true); }} className="w-10 h-10 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-95"><Icon name="Plus" size={20} /></button>
+                            <div><h2 className="text-3xl font-extrabold text-gray-800">收納管家</h2><p className="text-gray-400 text-sm mt-1">{containers.filter(c => c.id !== 'unsorted').length} 個容器 · {containers.reduce((acc, c) => acc + c.items.length, 0)} 件物品</p></div>
+                        </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <button onClick={() => setActiveCategory('unsorted_view')} className="bg-indigo-50 text-indigo-700 pl-3 pr-2 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border border-indigo-100 active:scale-95 transition-transform">
+                            <Icon name="Box" size={13}/> 未存放物品
+                            <span className="bg-white text-indigo-600 px-1.5 py-0.5 rounded-full text-[10px]">{unsortedItems.length}</span>
+                        </button>
+                        <div className="bg-gray-100 rounded-full p-1 flex gap-1">
+                            <button onClick={() => setBrowseMode('container')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${browseMode === 'container' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>容器</button>
+                            <button onClick={() => setBrowseMode('category')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${browseMode === 'category' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>分類</button>
+                        </div>
+                    </div>
+
+                    {browseMode === 'container' ? (
+                        <div className="space-y-2.5">
+                            {containers.filter(c => c.id !== 'unsorted').map(container => (
+                                <div key={container.id} onClick={() => setSelectedContainer(container)} className="bg-white rounded-xl shadow-sm border border-gray-100 flex items-center gap-3 p-2.5 cursor-pointer active:scale-[0.98] transition-transform">
+                                    <div className="w-14 h-14 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden">
+                                        {container.image ? <img src={container.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center opacity-30"><Icon name="Box" size={24} className="text-gray-400" /></div>}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <h3 className="font-bold text-gray-800 text-sm truncate">{container.name}</h3>
+                                        <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1 truncate"><Icon name="MapPin" size={10} className="text-indigo-400 flex-shrink-0" /><span className="truncate">{container.location}</span></div>
+                                    </div>
+                                    <div className="text-xs font-bold text-gray-400 flex-shrink-0">{container.items.length} 件</div>
+                                    <Icon name="ChevronRight" size={16} className="text-gray-300 flex-shrink-0"/>
+                                </div>
+                            ))}
+                            <button onClick={() => setShowAddContainer(true)} className="w-full rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center gap-2 text-gray-400 hover:bg-gray-50 hover:border-gray-300 transition-colors py-3.5">
+                                <Icon name="Plus" size={18} className="text-gray-500"/><span className="text-sm font-bold">新增容器</span>
+                            </button>
+                        </div>
+                    ) : (
+                        <>
+                        <div className="flex justify-between items-center">
+                            <p className="text-xs text-gray-400 ml-1">長按並拖動可調整分類順序</p>
+                            <button onClick={() => setCatEditMode(v => !v)} className={`text-xs font-bold px-2.5 py-1 rounded-full ${catEditMode ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500'}`}>{catEditMode ? '完成' : '編輯'}</button>
+                        </div>
+                        <div className="space-y-2.5">
+                            {Object.values(categories).map(cat => (
+                                editingCatId === cat.id ? (
+                                    <div key={cat.id} className="bg-indigo-50 rounded-xl border border-indigo-200 p-3 space-y-2">
+                                        <div className="flex gap-2">
+                                            <input value={editCatName} onChange={e => setEditCatName(e.target.value)} className="flex-1 border border-indigo-200 rounded-lg p-2 text-sm bg-white outline-none" />
+                                            <button onClick={() => handleDeleteCategory(cat.id)} className="p-2 text-red-500 bg-white rounded-lg border border-red-100"><Icon name="Trash2" size={16}/></button>
+                                        </div>
+                                        <div className="grid grid-cols-6 gap-2 max-h-40 overflow-y-auto no-scrollbar py-1">
+                                            {AVAILABLE_ICONS.map(icon => (
+                                                <button key={icon.name} onClick={() => setEditCatIcon(icon.name)} className={`aspect-square rounded-lg border flex items-center justify-center ${editCatIcon === icon.name ? 'bg-indigo-100 border-indigo-400 text-indigo-700' : 'bg-white border-gray-200 text-gray-500'}`} title={icon.label}><Icon name={icon.name} size={20}/></button>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setEditingCatId(null)} className="flex-1 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-600">取消</button>
+                                            <button onClick={() => { handleUpdateCategory(cat.id, { label: editCatName, iconName: editCatIcon }); setEditingCatId(null); }} disabled={!editCatName} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold disabled:opacity-50">儲存</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                <div
+                                    key={cat.id}
+                                    draggable
+                                    onDragStart={(e) => { setDraggedCatId(cat.id); e.dataTransfer.effectAllowed = 'move'; }}
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        if (!draggedCatId || draggedCatId === cat.id) return;
+                                        const ids = Object.keys(categories);
+                                        const fromIdx = ids.indexOf(draggedCatId);
+                                        const toIdx = ids.indexOf(cat.id);
+                                        if (fromIdx === -1 || toIdx === -1) return;
+                                        ids.splice(toIdx, 0, ids.splice(fromIdx, 1)[0]);
+                                        const reordered = {};
+                                        ids.forEach(id => { reordered[id] = categories[id]; });
+                                        setCategories(reordered);
+                                        setDraggedCatId(null);
+                                    }}
+                                    onDragEnd={() => setDraggedCatId(null)}
+                                    onClick={() => setActiveCategory(cat.id)}
+                                    className={`bg-white rounded-xl border flex items-center gap-3 p-2.5 cursor-pointer active:scale-[0.98] transition-transform shadow-sm ${draggedCatId === cat.id ? 'opacity-40 border-indigo-300' : 'border-gray-100'}`}
+                                >
+                                    <div className="bg-gray-50 w-11 h-11 rounded-lg flex items-center justify-center text-gray-500 flex-shrink-0"><Icon name={cat.iconName} size={20} /></div>
+                                    <span className="font-bold text-gray-700 flex-1 truncate">{cat.label}</span>
+                                    <span className="text-xs font-bold text-gray-400 flex-shrink-0">{catStats[cat.id]?.count || 0} 件</span>
+                                    {catEditMode && <button onClick={(e) => { e.stopPropagation(); setEditingCatId(cat.id); setEditCatName(cat.label); setEditCatIcon(cat.iconName); }} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg flex-shrink-0"><Icon name="Pencil" size={15}/></button>}
+                                    <Icon name="ChevronRight" size={16} className="text-gray-300 flex-shrink-0"/>
+                                </div>
+                                )
+                            ))}
+                        </div>
+                        </>
+                    )}
+                </div>
+                );
+            };
+
+            const SearchView = () => (
+                <div className="space-y-4 px-4 pt-6 pb-24 h-full flex flex-col">
+                    <div className="relative flex-shrink-0">
+                        <Icon name="Search" className="absolute left-4 top-3.5 text-gray-400" size={20} />
+                        <input type="text" placeholder="搜尋名稱、備註或分類" autoFocus className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 shadow-sm rounded-2xl text-lg outline-none focus:ring-2 focus:ring-indigo-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                        {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-4 top-3.5 text-gray-400"><Icon name="X" size={20}/></button>}
+                    </div>
+                    <div className="flex-1 overflow-y-auto space-y-2 no-scrollbar">
+                        {!searchTerm && <div className="text-center py-20 opacity-40"><Icon name="Filter" className="mx-auto mb-4 text-gray-300" size={64} /><p className="text-gray-500 font-medium">輸入關鍵字開始尋找</p></div>}
+                        {searchResults.map((res, idx) => {
+                            if(res.type === 'item') return <ItemRow key={idx} item={res.data} containerName={res.data.containerName} categories={categories} onClick={() => setViewingItemData(res.data)} onToggleFavorite={toggleFavorite} />;
+                            else return (
+                                <div key={idx} onClick={() => setSelectedContainer(res.data)} className="bg-white p-3 rounded-xl border border-gray-100 flex gap-3 items-center cursor-pointer active:bg-gray-50">
+                                    <div className="w-10 h-10 rounded-lg bg-indigo-50 flex-shrink-0 flex items-center justify-center"><Icon name="Box" size={16} className="text-indigo-500"/></div>
+                                    <div><div className="font-bold text-gray-800">{res.data.name}</div><div className="text-xs text-gray-500">容器</div></div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+
+            const CategoryDetailView = () => {
+                const catStats = useMemo(() => {
+                    const stats = {};
+                    containers.forEach(c => c.items.forEach(i => { if (!stats[i.category]) stats[i.category] = { count: 0, items: [] }; stats[i.category].count++; stats[i.category].items.push({ ...i, containerName: c.id === 'unsorted' ? '未存放' : c.name, containerId: c.id }); }));
+                    return stats;
+                }, [containers]);
+                const unsortedItems = containers.find(c => c.id === 'unsorted')?.items || [];
+
+                if (activeCategory === 'unsorted_view') {
+                     const items = unsortedItems;
+                     const sortedItems = [...items].sort((a, b) => (b.isFavorite === true) - (a.isFavorite === true));
+                     return (
+                        <div className="h-full flex flex-col">
+                            <div className="sticky top-0 bg-white/80 backdrop-blur-md px-4 py-3 flex items-center gap-3 border-b border-gray-100 z-10">
+                                <button onClick={() => setActiveCategory(null)} className="p-2 -ml-2 hover:bg-gray-100 rounded-full"><Icon name="ArrowLeft" size={20}/></button>
+                                <span className="font-bold text-lg">📦 未存放物品</span>
+                                <span className="text-xs bg-gray-100 px-2 py-1 rounded-full text-gray-500">{items.length}</span>
+                            </div>
+                            <div className="p-4 space-y-3 pb-24 overflow-y-auto no-scrollbar">
+                                {sortedItems.map((item) => <ItemRow key={item.id} item={item} containerName={null} categories={categories} onClick={() => setViewingItemData({...item, containerId: 'unsorted'})} showTimeLabel={item.hasExpiry} onToggleFavorite={toggleFavorite} />)}
+                                {items.length === 0 && <div className="text-center py-10 text-gray-400">太棒了，所有物品都已歸位！</div>}
+                            </div>
+                        </div>
+                     )
+                }
+
+                const cat = categories[activeCategory];
+                const items = catStats[activeCategory]?.items || [];
+                const sortedItems = [...items].sort((a, b) => (b.isFavorite === true) - (a.isFavorite === true));
+                return (
+                    <div className="h-full flex flex-col">
+                        <div className="sticky top-0 bg-white/80 backdrop-blur-md px-4 py-3 flex items-center gap-3 border-b border-gray-100 z-10">
+                            <button onClick={() => setActiveCategory(null)} className="p-2 -ml-2 hover:bg-gray-100 rounded-full"><Icon name="ArrowLeft" size={20}/></button>
+                            <span className="font-bold text-lg">{cat?.label}</span>
+                            <span className="text-xs bg-gray-100 px-2 py-1 rounded-full text-gray-500">{items.length}</span>
+                        </div>
+                        <div className="p-4 space-y-3 pb-24 overflow-y-auto no-scrollbar">
+                            {sortedItems.map((item) => <ItemRow key={item.id} item={item} containerName={item.containerName} categories={categories} onClick={() => setViewingItemData(item)} showTimeLabel={item.hasExpiry} onToggleFavorite={toggleFavorite} />)}
+                            {items.length === 0 && <div className="text-center py-10 text-gray-400">無物品</div>}
+                        </div>
+                    </div>
+                );
+            };
+
+            const ReminderView = () => {
+                let timedItems = [];
+                containers.forEach(c => c.items.forEach(i => { if (i.hasExpiry && i.expiryDate) timedItems.push({ ...i, containerName: c.id === 'unsorted' ? '未存放' : c.name, containerId: c.id, daysLeft: getDaysRemaining(i.expiryDate) }); }));
+                const expiredItems = timedItems.filter(i => i.daysLeft < 0);
+                const activeItems = timedItems.filter(i => i.daysLeft >= 0);
+                activeItems.sort((a, b) => a.daysLeft - b.daysLeft);
+                expiredItems.sort((a, b) => a.daysLeft - b.daysLeft);
+
+                let restockItems = [];
+                containers.forEach(c => c.items.forEach(i => {
+                    if (!i.isConsumable) return;
+                    const daysLeft = (i.consumableDurationDays && i.consumableStartDate) ? (Number(i.consumableDurationDays) - Math.floor((new Date().setHours(0,0,0,0) - new Date(i.consumableStartDate).setHours(0,0,0,0)) / 86400000)) : null;
+                    if (i.needsRestock || (daysLeft !== null && daysLeft <= 7)) {
+                        restockItems.push({ ...i, containerId: c.id, containerName: c.id === 'unsorted' ? '未存放' : c.name, daysLeft });
+                    }
+                }));
+
+                const [newName, setNewName] = useState('');
+                const [newPrice, setNewPrice] = useState('');
+                const [newImage, setNewImage] = useState(null);
+
+                if (showExpiredView) {
+                    return (
+                        <div className="h-full flex flex-col">
+                            <div className="sticky top-0 bg-white/80 backdrop-blur-md px-4 py-3 flex items-center gap-3 border-b border-gray-100 z-10">
+                                <button onClick={() => setShowExpiredView(false)} className="p-2 -ml-2 hover:bg-gray-100 rounded-full"><Icon name="ArrowLeft" size={20}/></button>
+                                <span className="font-bold text-lg text-red-600">已過期物品</span>
+                                <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">{expiredItems.length}</span>
+                            </div>
+                            <div className="p-4 space-y-3 pb-24 overflow-y-auto no-scrollbar">
+                                {expiredItems.map((item) => (
+                                    <ItemRow key={item.id} item={item} containerName={item.containerName} categories={categories} onClick={() => setViewingItemData(item)} showTimeLabel={true} onToggleFavorite={toggleFavorite} />
+                                ))}
+                                {expiredItems.length === 0 && <div className="text-center py-10 text-gray-400">暫無過期物品</div>}
+                            </div>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="h-full flex flex-col">
+                        <div className="sticky top-0 bg-white/80 backdrop-blur-md px-4 pt-4 pb-3 border-b border-gray-100 z-10">
+                            <div className="flex justify-between items-center mb-3">
+                                <h2 className="text-2xl font-bold text-gray-800">提醒</h2>
+                                {reminderSubView === 'time' && (
+                                    <button onClick={() => setShowExpiredView(true)} className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 border border-red-100 relative">
+                                        已過期
+                                        {expiredItems.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full border border-white">{expiredItems.length}</span>}
+                                    </button>
+                                )}
+                            </div>
+                            <div className="bg-gray-100 rounded-full p-1 flex gap-1">
+                                <button onClick={() => setReminderSubView('time')} className={`flex-1 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${reminderSubView === 'time' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>時效提醒</button>
+                                <button onClick={() => setReminderSubView('shopping')} className={`flex-1 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${reminderSubView === 'shopping' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>採購清單</button>
+                            </div>
+                        </div>
+
+                        {reminderSubView === 'time' ? (
+                            <div className="p-4 space-y-3 pb-24 overflow-y-auto no-scrollbar flex-1">
+                                {activeItems.map((item) => (
+                                    <ItemRow key={item.id} item={item} containerName={item.containerName} categories={categories} onClick={() => setViewingItemData(item)} showTimeLabel={true} onToggleFavorite={toggleFavorite} />
+                                ))}
+                                {activeItems.length === 0 && <div className="text-center py-10 text-gray-400">沒有即將到期的物品</div>}
+                            </div>
+                        ) : (
+                            <div className="p-4 space-y-6 pb-24 overflow-y-auto no-scrollbar flex-1">
+                                {/* 新需要買的 */}
+                                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h3 className="font-bold text-emerald-800 flex items-center gap-1"><Icon name="ShoppingBag" size={16}/> 需要買</h3>
+                                        <button onClick={() => setShowShoppingNewForm(v => !v)} className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center"><Icon name={showShoppingNewForm ? 'X' : 'Plus'} size={14}/></button>
+                                    </div>
+                                    {showShoppingNewForm && (
+                                        <div className="bg-white p-3 rounded-xl border border-emerald-200 mb-3 space-y-2">
+                                            <div className="flex gap-3">
+                                                <ImageUploader image={newImage} onImageChange={setNewImage} compact={true} />
+                                                <div className="flex-1 space-y-2">
+                                                    <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="名稱" className="w-full border border-gray-200 rounded-lg p-2 text-sm outline-none" />
+                                                    <div className="relative">
+                                                        <Icon name="DollarSign" size={14} className="absolute left-2.5 top-2.5 text-gray-400"/>
+                                                        <input type="number" value={newPrice} onChange={e => setNewPrice(e.target.value)} placeholder="價格" className="w-full border border-gray-200 rounded-lg p-2 pl-7 text-sm outline-none" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => {
+                                                if (!newName.trim()) return;
+                                                addShoppingExtra({ name: newName, price: newPrice, image: newImage, source: '手動新增' });
+                                                setNewName(''); setNewPrice(''); setNewImage(null); setShowShoppingNewForm(false);
+                                            }} className="w-full bg-emerald-600 text-white py-2 rounded-lg text-sm font-bold">加入清單</button>
+                                        </div>
+                                    )}
+                                    <div className="space-y-2">
+                                        {shoppingExtra.map(entry => (
+                                            <div key={entry.id} className="bg-white p-3 rounded-xl border border-emerald-100 flex items-center gap-3">
+                                                <button onClick={() => markShoppingExtraPurchased(entry)} className="w-6 h-6 rounded-full border-2 border-emerald-300 flex-shrink-0 active:bg-emerald-100"></button>
+                                                {entry.image && <img src={entry.image} className="w-8 h-8 rounded-lg object-cover flex-shrink-0"/>}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-bold text-gray-800 text-sm truncate">{entry.name}{entry.price ? `　$${entry.price}` : ''}</div>
+                                                    <div className="text-[10px] text-gray-400">{entry.source}</div>
+                                                </div>
+                                                <button onClick={() => removeShoppingExtra(entry.id)} className="p-1 text-gray-300 hover:text-red-500"><Icon name="X" size={16}/></button>
+                                            </div>
+                                        ))}
+                                        {shoppingExtra.length === 0 && <div className="text-center py-4 text-emerald-700/50 text-xs">目前沒有要買的</div>}
+                                    </div>
+                                </div>
+
+                                {/* 補貨 */}
+                                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
+                                    <h3 className="font-bold text-amber-800 mb-3 flex items-center gap-1"><Icon name="RefreshCw" size={16}/> 補貨（消耗品）</h3>
+                                    <div className="space-y-2">
+                                        {restockItems.map(item => (
+                                            <div key={item.id} className="bg-white p-3 rounded-xl border border-amber-100 flex items-center gap-3">
+                                                <button onClick={() => markRestockPurchased(item.containerId, item.id)} className="w-6 h-6 rounded-full border-2 border-amber-300 flex-shrink-0 active:bg-amber-100"></button>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-bold text-gray-800 text-sm truncate">{item.name}</div>
+                                                    <div className="text-[10px] text-gray-400">{item.daysLeft !== null ? (item.daysLeft < 0 ? '預估已用完' : `預估還可用 ${item.daysLeft} 天`) : '手動標記需要補貨'}</div>
+                                                </div>
+                                                <button onClick={() => { setEditingItemData({ ...item }); setShowItemForm(true); }} className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-lg"><Icon name="Edit3" size={16}/></button>
+                                            </div>
+                                        ))}
+                                        {restockItems.length === 0 && <div className="text-center py-4 text-amber-700/50 text-xs">目前沒有快用完的消耗品</div>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+            const MoreView = () => (
+                <div className="px-4 pt-6 pb-24 h-full overflow-y-auto no-scrollbar">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-6">更多</h2>
+                    <div className="space-y-3">
+                        <button onClick={() => setShowSettings(true)} className="w-full bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-3 active:bg-gray-50">
+                            <div className="bg-gray-100 p-2.5 rounded-full text-gray-600"><Icon name="Settings" size={20}/></div>
+                            <span className="font-bold text-gray-800 flex-1 text-left">設定</span>
+                            <Icon name="ChevronRight" size={18} className="text-gray-300"/>
+                        </button>
+                    </div>
+                </div>
+            );
+
+            const ListsView = () => {
+                const [newListName, setNewListName] = useState('');
+                const [newCustomText, setNewCustomText] = useState('');
+
+                const favItems = [];
+                containers.forEach(c => c.items.forEach(i => { if (i.isFavorite) favItems.push({ ...i, containerName: c.id === 'unsorted' ? '未存放' : c.name, containerId: c.id }); }));
+
+                const activeList = packingLists.find(l => l.id === activePackingListId);
+
+                if (listsSubView === 'packing' && activeList) {
+                    return (
+                        <div className="h-full flex flex-col">
+                            <div className="sticky top-0 bg-white/80 backdrop-blur-md px-4 py-3 flex items-center justify-between gap-3 border-b border-gray-100 z-10">
+                                <div className="flex items-center gap-2 overflow-hidden">
+                                    <button onClick={() => setActivePackingListId(null)} className="p-2 -ml-2 hover:bg-gray-100 rounded-full"><Icon name="ArrowLeft" size={20}/></button>
+                                    <span className="font-bold text-lg truncate">{activeList.name}</span>
+                                </div>
+                                <button onClick={() => { deletePackingList(activeList.id); }} className="p-2 -mr-2 text-gray-400 hover:text-red-500 rounded-full hover:bg-red-50"><Icon name="Trash2" size={18} /></button>
+                            </div>
+                            <div className="p-4 space-y-2 pb-32 overflow-y-auto no-scrollbar flex-1">
+                                {activeList.items.map(entry => (
+                                    <div key={entry.id} className="bg-white p-3 rounded-xl border border-gray-100 flex items-center gap-3 shadow-sm">
+                                        <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${entry.type === 'inventory' ? 'bg-indigo-50 text-indigo-500' : 'bg-gray-100 text-gray-400'}`}>
+                                            <Icon name={entry.type === 'inventory' ? 'Box' : 'Tag'} size={16}/>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="font-bold text-gray-800 text-sm truncate">{entry.name}</div>
+                                            {entry.type === 'inventory' ? (
+                                                <div className="text-[10px] text-gray-400">放在：{entry.containerName}</div>
+                                            ) : (
+                                                <div className="text-[10px] text-emerald-600">已加入採購清單</div>
+                                            )}
+                                        </div>
+                                        <button onClick={() => removeItemFromPackingList(activeList.id, entry.id)} className="p-1 text-gray-300 hover:text-red-500"><Icon name="X" size={16}/></button>
+                                    </div>
+                                ))}
+                                {activeList.items.length === 0 && <div className="text-center py-10 text-gray-400 text-sm">這份清單還是空的</div>}
+                            </div>
+                            <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-white via-white to-transparent md:max-w-md md:mx-auto space-y-2">
+                                {showPackingCustomInput && (
+                                    <div className="flex gap-2 bg-white p-2 rounded-xl border border-gray-200 shadow-lg">
+                                        <input value={newCustomText} onChange={e => setNewCustomText(e.target.value)} autoFocus placeholder="要買/要帶的東西" className="flex-1 p-2 text-sm outline-none" />
+                                        <button onClick={() => {
+                                            if (!newCustomText.trim()) return;
+                                            addItemToPackingList(activeList.id, { id: Date.now().toString(), type: 'custom', name: newCustomText.trim() });
+                                            addShoppingExtra({ name: newCustomText.trim(), source: `打包清單：${activeList.name}` });
+                                            showInfoToast('已同步到採購清單');
+                                            setNewCustomText(''); setShowPackingCustomInput(false);
+                                        }} className="bg-indigo-600 text-white px-3 rounded-lg text-sm font-bold">加入</button>
+                                    </div>
+                                )}
+                                <div className="flex gap-2">
+                                    <button onClick={() => setShowItemPicker(true)} className="flex-1 bg-white border border-gray-200 text-gray-700 py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 text-sm"><Icon name="Box" size={16}/> 從庫存選擇</button>
+                                    <button onClick={() => setShowPackingCustomInput(v => !v)} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 text-sm"><Icon name="Plus" size={16}/> 新增購買</button>
+                                </div>
+                            </div>
+                            {showItemPicker && (
+                                <ItemPickerModal
+                                    containers={containers}
+                                    categories={categories}
+                                    onClose={() => setShowItemPicker(false)}
+                                    onSelect={(item) => {
+                                        addItemToPackingList(activeList.id, { id: Date.now().toString(), type: 'inventory', name: item.name, itemId: item.id, containerId: item.containerId, containerName: item.containerName });
+                                        setShowItemPicker(false);
+                                    }}
+                                />
+                            )}
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="h-full flex flex-col">
+                        <div className="sticky top-0 bg-white/80 backdrop-blur-md px-4 pt-4 pb-3 border-b border-gray-100 z-10">
+                            <div className="flex justify-between items-center mb-3">
+                                <h2 className="text-2xl font-bold text-gray-800">清單</h2>
+                                {listsSubView === 'packing' && (
+                                    <button onClick={() => setShowPackingNewListForm(v => !v)} className="w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-95"><Icon name="Plus" size={18} /></button>
+                                )}
+                            </div>
+                            <div className="bg-gray-100 rounded-full p-1 flex gap-1">
+                                <button onClick={() => setListsSubView('favorites')} className={`flex-1 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${listsSubView === 'favorites' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>收藏</button>
+                                <button onClick={() => setListsSubView('packing')} className={`flex-1 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${listsSubView === 'packing' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>打包清單</button>
+                            </div>
+                        </div>
+
+                        {listsSubView === 'favorites' ? (
+                            <div className="p-4 space-y-3 pb-24 overflow-y-auto no-scrollbar flex-1">
+                                {favItems.map((item) => (
+                                    <ItemRow key={item.id} item={item} containerName={item.containerName} categories={categories} onClick={() => setViewingItemData(item)} onToggleFavorite={toggleFavorite} />
+                                ))}
+                                {favItems.length === 0 && <div className="text-center py-20 text-gray-400">還沒有收藏任何物品</div>}
+                            </div>
+                        ) : (
+                            <div className="p-4 pb-24 overflow-y-auto no-scrollbar flex-1">
+                                {showPackingNewListForm && (
+                                    <div className="mb-4 p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex gap-2">
+                                        <input value={newListName} onChange={e => setNewListName(e.target.value)} autoFocus placeholder="例：露營、爬山、手工材料" className="flex-1 p-2 border border-indigo-200 rounded-lg text-sm bg-white outline-none" />
+                                        <button onClick={() => { if (newListName.trim()) { createPackingList(newListName); setNewListName(''); setShowPackingNewListForm(false); } }} className="bg-indigo-600 text-white px-3 rounded-lg text-sm font-bold">建立</button>
+                                    </div>
+                                )}
+                                <div className="space-y-2.5">
+                                    {packingLists.map(list => (
+                                        <div key={list.id} onClick={() => setActivePackingListId(list.id)} className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm flex items-center gap-3 cursor-pointer active:bg-gray-50">
+                                            <div className="bg-indigo-50 p-2.5 rounded-full text-indigo-600"><Icon name="Backpack" size={20}/></div>
+                                            <div className="flex-1"><div className="font-bold text-gray-800">{list.name}</div><div className="text-xs text-gray-400">{list.items.length} 項物品</div></div>
+                                            <Icon name="ChevronRight" size={18} className="text-gray-300"/>
+                                        </div>
+                                    ))}
+                                    {packingLists.length === 0 && <div className="text-center py-20 text-gray-400 text-sm">還沒有打包清單，點右上角＋建立一份</div>}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+            return (
+                <div className="bg-gray-50 min-h-screen font-sans text-gray-900 md:max-w-md md:mx-auto shadow-2xl relative overflow-hidden flex flex-col">
+                    <main className={`flex-1 overflow-hidden ${selectedContainer ? 'p-0' : ''}`}>
+                        {selectedContainer ? <ContainerDetail selectedContainer={selectedContainer} categories={categories} setSelectedContainer={setSelectedContainer} setShowEditContainer={setShowEditContainer} handleDeleteContainer={handleDeleteContainer} setViewingItemData={setViewingItemData} toggleFavorite={toggleFavorite} setShowItemForm={setShowItemForm} setEditingItemData={setEditingItemData} />
+                        : activeTab === 'lists' ? <ListsView />
+                        : activeTab === 'find' ? <SearchView />
+                        : activeTab === 'more' ? <MoreView />
+                        : activeTab === 'reminder' ? <ReminderView />
+                        : activeCategory ? <CategoryDetailView />
+                        : <HomeView />}
+                    </main>
+                    {!selectedContainer && !(activeTab === 'lists' && listsSubView === 'packing' && activePackingListId) && (
+                        <nav className="fixed bottom-3 left-3 right-3 bg-gray-900 rounded-full shadow-[0_10px_30px_rgba(0,0,0,0.35)] px-2 py-2 flex justify-around items-center z-40 md:max-w-md md:mx-auto h-16">
+                            <button onClick={() => { setActiveTab('browse'); setActiveCategory(null); }} className={`flex flex-col items-center gap-0.5 w-12 ${activeTab === 'browse' ? 'text-indigo-300' : 'text-white/40'}`}><Icon name="Home" size={22} strokeWidth={activeTab === 'browse' ? 2.5 : 2} /></button>
+                            <button onClick={() => { setActiveTab('lists'); setActiveCategory(null); }} className={`flex flex-col items-center gap-0.5 w-12 ${activeTab === 'lists' ? 'text-indigo-300' : 'text-white/40'}`}><Icon name="Star" size={22} strokeWidth={activeTab === 'lists' ? 2.5 : 2} /></button>
+                            <div className="relative -top-6"><button onClick={() => setActiveTab('find')} className={`flex items-center justify-center w-16 h-16 rounded-full shadow-xl border-4 border-gray-900 transition-transform active:scale-95 ${activeTab === 'find' ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white'}`}><Icon name="Search" size={28} strokeWidth={3} /></button></div>
+                            <button onClick={() => setActiveTab('reminder')} className={`flex flex-col items-center gap-0.5 w-12 ${activeTab === 'reminder' ? 'text-indigo-300' : 'text-white/40'}`}>
+                                <div className="relative">
+                                    <Icon name="ShoppingCart" size={22} strokeWidth={activeTab === 'reminder' ? 2.5 : 2} />
+                                    <div className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-rose-500"></div>
+                                </div>
+                            </button>
+                            <button onClick={() => setActiveTab('more')} className={`flex flex-col items-center gap-0.5 w-12 ${activeTab === 'more' ? 'text-indigo-300' : 'text-white/40'}`}><Icon name="Menu" size={22} strokeWidth={activeTab === 'more' ? 2.5 : 2} /></button>
+                        </nav>
+                    )}
+                    {showAddContainer && <ContainerFormModal onClose={() => setShowAddContainer(false)} onSave={handleSaveContainer} />}
+                    {showEditContainer && selectedContainer && <ContainerFormModal initialData={selectedContainer} onClose={() => setShowEditContainer(false)} onSave={handleSaveContainer} />}
+                    {showItemForm && <ItemFormModal containers={containers} categories={categories} initialData={editingItemData} preSelectedContainerId={selectedContainer?.id} onClose={() => { setShowItemForm(false); setEditingItemData(null); }} onSave={handleSaveItem} onDelete={handleDeleteItem} onAddCategory={handleAddCategory} />}
+                    {viewingItemData && <ItemDetailModal item={viewingItemData} containerData={containers.find(c => c.id === viewingItemData.containerId)} categories={categories} onClose={() => setViewingItemData(null)} onEdit={() => { setEditingItemData(viewingItemData); setViewingItemData(null); setShowItemForm(true); }} onUpdateItem={(patch) => updateItemFields(viewingItemData.containerId, viewingItemData.id, patch)} />}
+                    {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onExport={handleExport} onImport={handleImport} />}
+                    {undoToast && (
+                        <div className="fixed bottom-24 left-4 right-4 md:max-w-md md:mx-auto bg-gray-900 text-white rounded-xl px-4 py-3 flex items-center justify-between gap-3 shadow-2xl z-50 animate-in fade-in duration-200">
+                            <span className="text-sm truncate">{undoToast.label}</span>
+                            <button onClick={handleUndo} className="text-indigo-300 font-bold text-sm flex-shrink-0">復原</button>
+                        </div>
+                    )}
+                    {infoToast && (
+                        <div className="fixed bottom-24 left-4 right-4 md:max-w-md md:mx-auto bg-emerald-600 text-white rounded-xl px-4 py-3 flex items-center gap-2 shadow-2xl z-50 animate-in fade-in duration-200">
+                            <Icon name="Check" size={16}/>
+                            <span className="text-sm truncate">{infoToast}</span>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+    <script>
+        // Register service worker so the app can be installed and works offline
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js').catch(() => {});
+            });
+        }
+    </script>
+</body>
+</html>
