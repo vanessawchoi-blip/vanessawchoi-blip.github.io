@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.vanessawchoi_blip.twa",
+        "sha256_cert_fingerprints": ["5C:DC:33:48:91:93:2C:E4:23:A5:5F:8A:1E:1C:1F:57:83:50:58:4D:74:F3:2D:B1:5E:82:DC:5B:79:8A:87:3D"]
+      }
+    }]
